@@ -13,7 +13,8 @@ ENV VARS REQUIRED:
   GROQ_API_KEY    - https://console.groq.com
   APIFY_TOKEN     - https://console.apify.com/account/integrations
   MAPS_ACTOR_ID   - the Apify actor ID you're wrapping
-                     (e.g. "compass/crawler-google-places")
+                     (default: "scraperlink~google-maps-scraper",
+                      a cheap HTTP-based Maps actor ~$0.50/1k results)
 
 RUN LOCALLY:
   pip install -r requirements.txt
@@ -40,7 +41,7 @@ app = FastAPI(title="Maps Engine")
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 APIFY_TOKEN = os.environ.get("APIFY_TOKEN", "")
-MAPS_ACTOR_ID = os.environ.get("MAPS_ACTOR_ID", "compass~crawler-google-places")
+MAPS_ACTOR_ID = os.environ.get("MAPS_ACTOR_ID", "scraperlink~google-maps-scraper")
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 APIFY_RUN_URL = f"https://api.apify.com/v2/acts/{MAPS_ACTOR_ID}/run-sync-get-dataset-items"
@@ -138,11 +139,17 @@ async def run_maps_actor(parsed: dict) -> list:
     if not APIFY_TOKEN:
         raise HTTPException(500, "Server misconfigured: missing APIFY_TOKEN")
 
+    # scraperlink/google-maps-scraper input: a single query string that
+    # includes the location (it has no separate location field), plus num/gl/hl.
+    search = parsed["search_term"]
+    location = parsed["location"]
+    query_str = f"{search} in {location}" if location else search
+
     actor_input = {
-        "searchStringsArray": [parsed["search_term"]],
-        "locationQuery": parsed["location"],
-        "maxCrawledPlacesPerSearch": parsed["max_results"],
-        "language": "en",
+        "query": [query_str],
+        "num": parsed["max_results"],
+        "gl": "us",
+        "hl": "en",
     }
 
     params = {"token": APIFY_TOKEN}
@@ -168,7 +175,7 @@ def trim_fields(items: list, want_phone: bool, want_website: bool) -> list:
             "rating": it.get("totalScore") or it.get("rating"),
         }
         if want_phone:
-            row["phone"] = it.get("phone") or it.get("phoneUnformatted")
+            row["phone"] = it.get("phone") or it.get("phoneUnformatted") or it.get("phoneNumber")
         if want_website:
             row["website"] = it.get("website")
         trimmed.append(row)
