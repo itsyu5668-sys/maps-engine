@@ -1,8 +1,8 @@
 {
   "actorSpecification": 1,
   "name": "ai-google-maps-scraper",
-  "title": "AI Google Maps Scraper | Search Box",
-  "description": "Type exactly what business leads you need in plain English. No config, no CSS selectors, no API keys - just describe what you want.",
+  "title": "AI Google Maps Scraper | Natural-Language Business Leads",
+  "description": "Scrape Google Maps business listings using a plain-English query. Returns structured JSON leads with name, address, rating, phone, and website. No config, no CSS selectors, no API keys.\n\nINPUT: a single natural-language string describing the businesses you want.\n\nExample input:\n{\"query\": \"coffee shops in Austin TX with phone numbers\"}\n\nExample output (one dataset item):\n{\"name\": \"Epoch Coffee\", \"address\": \"221 W North Loop Blvd, Austin, TX 78751\", \"rating\": 4.5, \"phone\": \"+1 512-454-3762\", \"website\": \"https://epochcoffee.com\"}\n\nUse cases: local lead generation, B2B prospecting, sales CRM enrichment, market research, competitor analysis. Works for any business category and location worldwide that Google Maps indexes.",
   "version": "0.1",
   "input": "./input_schema.json",
   "datasetSchema": "./dataset_schema.json",

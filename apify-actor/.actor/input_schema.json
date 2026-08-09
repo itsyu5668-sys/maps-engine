@@ -6,7 +6,7 @@
     "query": {
       "title": "What do you want to scrape?",
       "type": "string",
-      "description": "Tell us exactly what data you need...",
+      "description": "A plain-English description of the business leads you need. Include the business category and the location. Example: \"plumbers in New York City with websites\". The actor uses an AI model to convert your query into a Google Maps search and returns structured results.",
       "editor": "textfield",
       "prefill": "Italian restaurants in Miami with phone numbers"
     }
