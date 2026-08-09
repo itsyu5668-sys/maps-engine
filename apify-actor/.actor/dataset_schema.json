@@ -1,0 +1,31 @@
+{
+  "actorSpecification": 1,
+  "fields": {
+    "type": "object",
+    "properties": {
+      "name": { "type": "string", "title": "Business Name" },
+      "address": { "type": "string", "title": "Address" },
+      "rating": { "type": "number", "title": "Rating" },
+      "phone": { "type": "string", "title": "Phone" },
+      "website": { "type": "string", "title": "Website" }
+    }
+  },
+  "views": {
+    "overview": {
+      "title": "Leads",
+      "transformation": {
+        "fields": ["name", "address", "rating", "phone", "website"]
+      },
+      "display": {
+        "component": "table",
+        "properties": {
+          "name": { "label": "Business Name" },
+          "address": { "label": "Address" },
+          "rating": { "label": "Rating" },
+          "phone": { "label": "Phone" },
+          "website": { "label": "Website" }
+        }
+      }
+    }
+  }
+}
