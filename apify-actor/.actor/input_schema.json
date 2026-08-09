@@ -1,0 +1,15 @@
+{
+  "title": "AI Google Maps Scraper",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "query": {
+      "title": "What do you want to scrape?",
+      "type": "string",
+      "description": "Tell us exactly what data you need...",
+      "editor": "textfield",
+      "prefill": "Italian restaurants in Miami with phone numbers"
+    }
+  },
+  "required": ["query"]
+}

@@ -1,0 +1,9 @@
+{
+  "actorSpecification": 1,
+  "name": "ai-google-maps-scraper",
+  "title": "AI Google Maps Scraper | Search Box",
+  "description": "Type exactly what business leads you need in plain English. No config, no CSS selectors, no API keys - just describe what you want.",
+  "version": "0.1",
+  "input": "./input_schema.json",
+  "dockerfile": "./Dockerfile"
+}
