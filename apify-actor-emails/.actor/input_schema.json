@@ -1,0 +1,15 @@
+{
+  "title": "What businesses do you looking to extract emails from?",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "query": {
+      "title": "Search query",
+      "type": "string",
+      "description": "Describe the businesses you want contact emails for, in plain English. Include the business type and city for the best results. The actor finds each business on Google Maps, then visits its website to pull the public contact email.",
+      "editor": "textfield",
+      "prefill": "roofing contractors in Dallas with emails"
+    }
+  },
+  "required": ["query"]
+}

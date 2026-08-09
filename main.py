@@ -27,8 +27,11 @@ DEPLOY:
 
 import os
 import json
+import re
 import logging
+import asyncio
 from typing import Optional
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -191,6 +194,205 @@ async def scrape_maps(req: ScrapeRequest):
         parsed_query=parsed,
         result_count=len(results),
         results=results,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Email extraction endpoint (Actor #2)
+#
+# Honest description of what this does: it visits each business's own public
+# website (homepage and common contact-page paths) and regex-extracts the
+# email addresses visible on the page. That is the same thing a human visitor
+# would see. It does NOT guess emails, does NOT verify deliverability, and
+# does NOT use any private/enrichment data source. Businesses that publish no
+# public email are skipped, so result counts will be lower than a pure
+# business-search run.
+# ---------------------------------------------------------------------------
+
+EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
+
+# Local parts and domains that are almost never a real contact address.
+JUNK_LOCAL = {
+    "noreply", "no-reply", "donotreply", "do-not-reply", "example", "test",
+    "sample", "email", "your", "yourname", "user", "youremail", "change",
+    "domain", "someone", "sentry", "wpmudev", "placeholder", "example.com",
+}
+JUNK_DOMAIN = {
+    "example.com", "example.org", "example.net", "yourdomain.com", "domain.com",
+    "email.com", "wixpress.com", "sentry.io", "sentry-next.wixpress.com",
+    "shields.io", "schema.org", "w3.org", "google.com", "googleapis.com",
+    "gstatic.com", "cloudflare.com", "jsdelivr.net", "unpkg.com",
+    "bootstrap.com", "github.com", "github.io", "wordpress.com",
+    "wix.com", "squarespace.com", "shopify.com",
+}
+JUNK_LOCAL_SUFFIX = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".css", ".js")
+# Preferred local parts when more than one real email is found.
+PREFERRED_LOCAL = ("info", "hello", "contact", "sales", "admin", "office", "mail", "support", "team")
+
+# Pages most likely to hold a public contact address.
+CONTACT_PATHS = ["", "/contact", "/contact-us", "/contactus", "/about", "/about-us"]
+
+EMAIL_FETCH_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+EMAIL_FETCH_CONCURRENCY = 8
+EMAIL_FETCH_TIMEOUT = 15.0
+
+
+class EmailScrapeResponse(BaseModel):
+    parsed_query: dict
+    result_count: int
+    skipped_no_email: int
+    results: list
+
+
+def _is_junk_email(addr: str) -> bool:
+    """True if the address looks like a placeholder, an asset URL, or a vendor."""
+    addr = addr.strip().lower()
+    local, _, domain = addr.partition("@")
+    if not domain or domain in JUNK_DOMAIN:
+        return True
+    if local in JUNK_LOCAL:
+        return True
+    if any(local.endswith(s) for s in JUNK_LOCAL_SUFFIX):
+        return True
+    # image filenames parsed out of src attributes: "logo-2x@2x" etc.
+    if re.match(r"^[0-9a-f]{8,}$", local):
+        return True
+    return False
+
+
+def _pick_best(emails: list) -> Optional[str]:
+    """From a deduped set of real emails, pick the most likely contact."""
+    if not emails:
+        return None
+    lowered = []
+    for e in emails:
+        e = e.strip().rstrip(".").lower()
+        if not _is_junk_email(e):
+            lowered.append(e)
+    if not lowered:
+        return None
+    uniq = list(dict.fromkeys(lowered))
+    for pref in PREFERRED_LOCAL:
+        for e in uniq:
+            if e.split("@", 1)[0] == pref:
+                return e
+    # otherwise return the shortest reasonable address (shorter = more generic)
+    uniq.sort(key=lambda e: (len(e), e))
+    return uniq[0]
+
+
+def _extract_emails_from_html(html: str) -> list:
+    """Pull plain emails out of rendered HTML, also decode basic mailto:."""
+    found = []
+    # mailto: links first, slightly higher signal
+    for m in re.finditer(r'mailto:([^"\'\s>]+)', html, re.I):
+        found.append(m.group(1))
+    # then any bare address
+    for m in EMAIL_RE.finditer(html):
+        found.append(m.group(0))
+    return found
+
+
+def _normalize_site_url(raw: str) -> Optional[str]:
+    """Clean a Maps website field into a scheme + bare host."""
+    if not raw or not isinstance(raw, str):
+        return None
+    raw = raw.strip()
+    if not raw.startswith(("http://", "https://")):
+        raw = "https://" + raw
+    try:
+        p = urlparse(raw)
+    except Exception:
+        return None
+    host = p.netloc.lower()
+    if not host or host in {"", "none", "null"}:
+        return None
+    return f"{p.scheme}://{host}"
+
+
+async def _fetch_one_site(client: httpx.AsyncClient, base: str) -> Optional[str]:
+    """Fetch homepage + contact paths, return the best email found, or None."""
+    seen_emails = []
+    for path in CONTACT_PATHS:
+        url = base + path
+        try:
+            resp = await client.get(url, headers=EMAIL_FETCH_HEADERS, follow_redirects=True)
+        except (httpx.RequestError, httpx.HTTPError):
+            continue
+        if resp.status_code >= 400:
+            continue
+        # skip huge responses (avoid parsing MBs of JS)
+        text = resp.text
+        if len(text) > 2_000_000:
+            text = text[:2_000_000]
+        seen_emails.extend(_extract_emails_from_html(text))
+        if seen_emails:
+            # a real address on the homepage is usually enough; stop early
+            best = _pick_best(seen_emails)
+            if best:
+                return best
+    return _pick_best(seen_emails)
+
+
+async def extract_emails(leads: list) -> tuple:
+    """Visit each lead's website, extract a public contact email.
+
+    Returns (enriched_leads, skipped_count). Only leads with a found email
+    are included in enriched_leads; the rest are counted as skipped.
+    """
+    targets = []
+    for lead in leads:
+        base = _normalize_site_url(lead.get("website"))
+        targets.append((lead, base))
+
+    sem = asyncio.Semaphore(EMAIL_FETCH_CONCURRENCY)
+    found = [None] * len(targets)
+
+    async def worker(idx: int, lead: dict, base: Optional[str]):
+        if not base:
+            return
+        async with sem:
+            async with httpx.AsyncClient(timeout=EMAIL_FETCH_TIMEOUT) as client:
+                try:
+                    email = await _fetch_one_site(client, base)
+                except Exception as e:
+                    log.warning("email fetch failed for %s: %s", base, e)
+                    email = None
+        if email:
+            lead_with_email = dict(lead)
+            lead_with_email["email"] = email
+            found[idx] = lead_with_email
+
+    await asyncio.gather(*[worker(i, l, b) for i, (l, b) in enumerate(targets)])
+
+    enriched = [x for x in found if x is not None]
+    skipped = len(targets) - len(enriched)
+    return enriched, skipped
+
+
+@app.post("/scrape/maps-emails", response_model=EmailScrapeResponse)
+async def scrape_maps_emails(req: ScrapeRequest):
+    """Google Maps businesses enriched with a public website contact email.
+
+    The email is pulled directly from each business's own website (homepage
+    or contact page). Not every business publishes one, so some leads are
+    skipped. We do not verify deliverability or use a private data source.
+    """
+    parsed = await parse_query(req.query)
+    raw_items = await run_maps_actor(parsed)
+    leads = trim_fields(raw_items)
+    enriched, skipped = await extract_emails(leads)
+    return EmailScrapeResponse(
+        parsed_query=parsed,
+        result_count=len(enriched),
+        skipped_no_email=skipped,
+        results=enriched,
     )
 
 
