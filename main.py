@@ -147,7 +147,7 @@ async def run_maps_actor(parsed: dict) -> list:
 
     actor_input = {
         "query": [query_str],
-        "num": parsed["max_results"],
+        "num": max(parsed["max_results"], 10),
         "gl": "us",
         "hl": "en",
     }
@@ -165,19 +165,19 @@ async def run_maps_actor(parsed: dict) -> list:
     return items
 
 
-def trim_fields(items: list, want_phone: bool, want_website: bool) -> list:
-    """Return only the fields the user actually asked for, plus basics."""
+def trim_fields(items: list) -> list:
+    """Return clean lead fields. Phone/website are core contact data for lead
+    generation, so they are always emitted. Google Maps doesn't have a phone
+    for every business, so phone may be null — the dataset schema permits null."""
     trimmed = []
     for it in items:
         row = {
             "name": it.get("title") or it.get("name"),
             "address": it.get("address"),
-            "rating": it.get("totalScore") or it.get("rating"),
+            "rating": it.get("rating") or it.get("totalScore"),
+            "phone": it.get("phone") or it.get("phoneUnformatted") or it.get("phoneNumber"),
+            "website": it.get("website"),
         }
-        if want_phone:
-            row["phone"] = it.get("phone") or it.get("phoneUnformatted") or it.get("phoneNumber")
-        if want_website:
-            row["website"] = it.get("website")
         trimmed.append(row)
     return trimmed
 
@@ -186,7 +186,7 @@ def trim_fields(items: list, want_phone: bool, want_website: bool) -> list:
 async def scrape_maps(req: ScrapeRequest):
     parsed = await parse_query(req.query)
     raw_items = await run_maps_actor(parsed)
-    results = trim_fields(raw_items, parsed["want_phone"], parsed["want_website"])
+    results = trim_fields(raw_items)
     return ScrapeResponse(
         parsed_query=parsed,
         result_count=len(results),
