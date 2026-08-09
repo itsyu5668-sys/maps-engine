@@ -1,29 +1,56 @@
 {
   "actorSpecification": 1,
   "fields": {
-    "$schema": "https://json-schema.org/draft-07/schema#",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
-      "name": { "type": ["string", "null"] },
-      "address": { "type": ["string", "null"] },
-      "rating": { "type": ["number", "null"] },
-      "phone": { "type": ["string", "null"] },
-      "website": { "type": ["string", "null"] }
-    }
+      "name": {
+        "type": ["string", "null"],
+        "title": "Business name",
+        "description": "The business or place name exactly as shown on Google Maps. Always present for a valid result.",
+        "example": "Epoch Coffee"
+      },
+      "address": {
+        "type": ["string", "null"],
+        "title": "Full address",
+        "description": "Street address including city, state, and postal code, as returned by Google Maps. May be null for businesses that hide their address.",
+        "example": "221 W N Loop Blvd, Austin, TX 78751, United States"
+      },
+      "rating": {
+        "type": ["number", "null"],
+        "title": "Star rating",
+        "description": "Google star rating from 1.0 to 5.0, or null for businesses with too few reviews to have a rating.",
+        "example": 4.5
+      },
+      "phone": {
+        "type": ["string", "null"],
+        "title": "Phone number",
+        "description": "Public phone number in international format. Around 60 to 100 percent of results include one depending on the business type. Use it for cold calling or SMS outreach.",
+        "example": "+1 512-454-3762"
+      },
+      "website": {
+        "type": ["string", "null"],
+        "title": "Website URL",
+        "description": "The official website URL for the business. Present on nearly every result and is the best field for email finding, domain enrichment, and competitor research.",
+        "example": "http://www.epochcoffee.com/"
+      }
+    },
+    "required": ["name"]
   },
   "views": {
     "overview": {
       "title": "Leads",
+      "description": "One row per business with name, address, rating, phone, and website.",
       "transformation": {
         "fields": ["name", "address", "rating", "phone", "website"]
       },
       "display": {
         "component": "table",
         "properties": {
-          "name": { "label": "Business Name" },
-          "address": { "label": "Address" },
-          "rating": { "label": "Rating" },
-          "phone": { "label": "Phone" },
+          "name": { "label": "Business Name", "format": "text" },
+          "address": { "label": "Address", "format": "text" },
+          "rating": { "label": "Rating", "format": "number" },
+          "phone": { "label": "Phone", "format": "text" },
           "website": { "label": "Website", "format": "link" }
         }
       }
